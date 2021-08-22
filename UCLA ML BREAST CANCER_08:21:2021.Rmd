@@ -1,0 +1,737 @@
+---
+title: "BREAST CANCER.AUG"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+# Load all the required packages.
+```{r}
+# Loading the necessary libraries.
+library(pacman)
+p_load(readr, corrplot, MASS, leaps, pROC, class, e1071, nnet, neuralnet,NeuralNetTools,rpart,rpart.plot,party,rattle,ggplot2,gridExtra,magrittr,magrittr,dplyr,klaR,kernlab,caret,ROCR, tidyverse, car, tree)
+```
+
+
+# Load the original data set.
+```{r include=FALSE}
+# Load the data
+data <- read_csv("~/Downloads/New folder/data.csv")
+
+# Use the attach() function to access all the variables in the data set.
+attach(data)
+```
+
+** To commence, we import the data set into Rstudio and load the data.csv file.
+
+# Feature Engineering
+```{r}
+# Display the dimension of data set.
+dim(data)
+view(data)
+# Eliminating the first column: Patient ID. Define a new data frame called bc.
+bc = data[,-1]
+
+# Checking the sum of the NA values.
+sum(is.na(bc))
+
+# Use the head() to show the first 10 rows.
+head(bc,10)
+
+# Display the dimensions of bc data frame.
+dim(bc)
+
+# Structure of bc.
+str(bc)
+```
+
+** There are 569 rows and 32 columns in the original data set. We chose to eliminate the first column after reviewing the original data set. The first column consisted of the patient IDs. A new data frame called bc, which has 569 rows and 31 columns. The first ten rows were displayed using the head function. We selected diagnosis as a target variable or response variable, and It is classified into two categories: Malignant (cancerous) and Benign (non-cancerous) tumor cells.
+
+# Factor variable
+```{r}
+# Create a factor variable which consists of two levels 0 represents M and 1 represents B tumor cells.
+diagnosis = factor(data$diagnosis, levels = c(0,1), labels = c("M", "B"))
+
+# Use a contrast() to determine the levels of diagnosis.
+contrasts(diagnosis)
+```
+
+** We created a factor variable that stores the value 0 and 1 in the memory where O represents Malignant and 1 represents Benign. 
+
+
+
+# Cross Validation - Split the entire data into training and test [70%,30%] data set.
+
+```{r}
+# Define a variable called split size.
+split_size = 0.7
+
+# Define a variable called sample_size. Use the floor() function that returns a numeric vector.
+sample_size = floor(split_size * nrow(bc))
+
+# Use the set.seed() for the reproducibility.
+set.seed(1)
+
+# Define a variable called train_indices. Use the sample() to generate a sequence of random rows.
+train_indices = sample(seq_len(nrow(bc)), size = sample_size)
+
+# Define the train set.
+train = bc[train_indices,]
+
+# Define the test set.
+test = bc[-train_indices,]
+
+# Define the test diagnosis.
+diagnose.test = bc$diagnosis[-train_indices]
+
+# Display the dimensions of the train and the test set.
+dim(train)
+dim(test)
+```
+
+** We decided to split the bc data set into train and test sets with a data size of 70 to 30 percent. The dimensions of the train data set are 398 by 31. The dimensions of the test data set are 171 by 31.
+
+
+# ******************************************************************** Logistic regression ********************************************************************
+
+```{r warning=FALSE}
+# Create a training factor variable.
+train$diagnosis = as.factor(train$diagnosis)
+
+# Fit a model with all the predictors.
+glm.fits = glm(diagnosis ~ ., data = train, family = binomial, subset = train_indices, maxit = 100)
+
+# Display the coefficients.
+round(coef(glm.fits),2)
+
+# Use the predict() to predict the values of the target variable.
+glm.probs = predict(glm.fits, test, type = "response")
+glm.pred = rep("M", 171)
+
+# Use a 0.5 cut-off and shows the increase in benign cells.
+glm.pred[glm.probs > 0.5] = "B"
+
+# Create a Confusion Matrix.
+table(glm.pred, diagnose.test)
+
+# Compute the accuracy in percent to two decimal places.
+round(mean(glm.pred == diagnose.test), 2)*100
+```
+** Logistic regression model shows an accuracy of 5% correctly predicting increase in benign cell with a cut-off 0.5.
+
+Logistic regression equation:
+$diagnosis = -1210.89 - 15.77(radius \ mean) + 8.23 (texture\  mean) - 0.76 (perimeter\  mean) - 0.04 (area \ mean) + 3268.89 (smoothness\  mean) - 1907.46 (compactness \ mean) + 9.3 (concavity\  mean) + 2381.14 (concave \ points \ mean) + 126.68 (symmetry \ mean) - 1681.13 (fractal \ dimension \ mean) - 447.33 (radius\  se) + 67.47 (texture \ se) -15.86 (perimeter\  se) + 7.40 (area \ se) + 7618.18 (smoothness \ se) - 82.48 (compactness \ se) - 844.58 (concavity\  se) + 10602.44 (concave\  points \ se) - 3693.15 (symmetry\  se) - 39735.46 (fractal \ dimension\  se) + 70.32 (radius \ worst) - 5.37 (texture \ worst) + 0.73 (perimeter \ worst) - 0.50 (area \ worst) - 1679.73 (smoothness \ worst) - 225.87 (compactness \ worst) + 316.33 (concavity \ worst)- 626.35 (concave\  points \ worst) + 514.57 (symmetry\  worst) + 7258.78 (fractal\  dimension worst)$.
+
+
+# Model selection criteria - stepwise selection method
+```{r warning=FALSE}
+# Stepwise selection model with AIC.
+"Forward with AIC"
+stepmodel.0 = stepAIC(glm.fits,direction = "forward", trace = FALSE)
+coef(stepmodel.0)
+
+
+"Backward with AIC"
+stepmodel.1 = stepAIC(glm.fits,direction = "backward", trace = FALSE)
+coef(stepmodel.1)
+
+
+"Both with AIC"
+stepmodel.2 = stepAIC(glm.fits,direction = "both", trace = FALSE)
+coef(stepmodel.2)
+
+
+"Both with BIC"
+# Stepwise selection model with BIC.
+stepmodel.3 = stepAIC(glm.fits, direction = "both", k = log(nrow(train)), trace = FALSE)
+coef(stepmodel.3)
+```
+
+** We used the AIC and BIC criterion to facilitate our stepwise selection criteria. We identified that, except for the forward AIC model, all other models with AIC and BIC criteria generated similar models with the same number of variables. As a result, we have moved on to the best subset selection approach. We chose the best subset selection approach since it gave us a ten-predictor model that satisfied our research objectives.
+
+# The best subset selection method.
+```{r}
+# Best subset selection method
+stepmodel.4 = regsubsets(diagnosis ~ ., data = train,subset = train_indices, nvmax = 10)
+
+# Use a summary() function to produce the results of a fitted model.
+summary(stepmodel.4)
+```
+
+
+We used the best subset selection method to select a final model, which includes all of the variables listed in the summary table and takes into account ten variables for this particular research.
+
+
+# Hypothesis testing
+
+$H_O: Both \ models \ are \ the \ same.$
+
+versus
+
+$H_1: Both \ models\ are \ not \ the \ same.$
+
+# Use an Anova approach.
+```{r warning=FALSE}
+# Reduced Model
+model1 <- glm(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train, family = "binomial")
+
+# Full Model
+model2 <- glm(diagnosis ~ ., data = train, family = "binomial")
+
+# Compare both models by using an anova appraoch.
+anova(model1, model2, test = "F")
+```
+Since the p-value is very small in the analysis of deviance table indicates we rejected the $H_O: Both \ models \ are \ equal.$ null hypothesis. Thus, we can conclude that both models are not equal.
+
+
+# Fit a Logistic regression model with 10 predictors.
+```{r warning=FALSE}
+# Fit the new model with 10 predictors
+glm.fits1 = glm(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train , subset = train_indices, family = binomial, maxit = 100) 
+# maxit is the number of iterations for each imputation / glm control on number of iterations.
+
+# Display the coefficients.
+round(coef(glm.fits1),2)
+
+# Predict the fitted model on the test set.
+glm.probs1 = predict(glm.fits1, test, type = "response")
+glm.pred = rep("M", 171)
+
+# Use a cut off value 0.5 to provide an increase in benign cell.
+glm.pred[glm.probs1 > 0.5] = "B"
+
+# Print the Confusion Matrix.
+table(pred = glm.pred, true = test$diagnosis)
+
+# Compute the accuracy.
+x1 = round(mean(glm.pred == diagnose.test), 2)*100
+x1
+```
+
+Including only ten predictors in the logistic regression model, accuracy dropped by 3%. Thus, we can infer that accuracy is about 2%, correctly predicting an increase in the benign cell with a cut-off value of 0.5.
+
+
+Logistic regression equation:
+$diagnosis = - 17.23 - 3.85(radius \ mean) + 0.50 (texture\  mean) - 122.53 (compactness \ mean) + 359.12 (concave\  points \ mean) + 270.83 (smoothness \ se) - 669.50 (fractal\  dimension\  se) + 0.40 (radius \ worst) + 0.04 (area\  worst) + 0.12 (symmetry\  worst) + 235.81 (fractal \ dimension \ worst)$.
+
+# Examining the Multi-collinearity Issue.
+
+```{r}
+# Checking the correlations among the predictors
+
+# Define a variable called M. Round the values to the two decimal places.
+M = round(cor(bc[,-1]),2)
+
+# Use a corrplot() function to display the relationship between each variable.
+corrplot(M, type = "upper", order = "hclust", tl.col = "black", tl.srt = 70, tl.cex= 0.5, outline= T)
+
+# Check the multi-collinearity issue by using  VIF().
+car::vif(glm.fits1)
+```
+
+
+** The corrplot function was used to check the correlation between the variables. This tool is part of the corrplot package. As we all know, when the correlation value approaches 1, it indicates that two variables are highly correlated (or connected). Also, if the vif values are Greater than five cut-offs, the variables have a multicollinearity issue. Smoothness_se and symmetry worst have cut-offs of less than five, whereas fractal dimension se and texture mean have cut-offs that are very close to five. The rest of the variables, as per our investigation, are far from the cut-off value. As a result, if the logistic regression model contains highly correlated variables, the model will be poorly generalized.
+
+
+# Create a function that computes Classification metrics: Accuracy, Precision, Senstivity, Specificity.
+```{r}
+# Create a function called stat which includes two arguments actual and predicted value and returns an output.
+stat = function(predicted, actual){
+  confusion.table <- table(predicted = predicted, actual = actual)
+  output <- list(confusion.table = confusion.table)
+  TN = confusion.table[4]
+  FN = confusion.table[3]
+  FP = confusion.table[2]
+  TP = confusion.table[1]
+  output$Accuracy <- round((TP +TN) / sum(confusion.table),2)*100
+  output$Precision <- round((TP) / (TP + FP ),2)*100
+  output$Senstivity <- round((TP) / (TP + FN),2)*100
+  output$Specificity <- round((TN)/(TN+FP),2)*100
+  
+  return(output)
+}
+```
+
+The stat function takes two arguments, predicted and actual, and returns an output. The output comprises a confusion matrix, accuracy, precision, sensitivity, and specificity for each algorithm.
+
+
+# Create a function called error that returns test errors.
+```{r}
+error = function(predicted, actual){
+  TEST = round(mean(predicted  != actual),2)
+  
+  return(TEST)
+}
+```
+
+We designed an error function that takes two arguments: predicted and actual, and returns the test error result for each algorithm.
+
+# Computing performance metrics and test error for the logistic regression model.
+```{r}
+# Call a stat function.
+stat1 = stat(glm.pred, test$diagnosis)
+
+# Call an error function.
+er1 = error(glm.pred, test$diagnosis)
+```
+
+
+
+
+# Use a logistic regression model to predict the true relationship with ROC curve.
+
+** ROC stands for Receiver Operating Characteristics. ROC curves are the most widely used to visualize the relationship/trade-off between clinical sensitivity and specificity for any cut-off between 0 and 1 for a test or a set of tests. Furthermore, the area under the ROC curve indicates the benefit of using the test(s) in question. The Roc curve is a plot of sensitivity (TP)  versus 1-specificity(FP).
+
+```{r}
+# Use a roc() function to compute the true relationship.
+ROC1 = roc(test$diagnosis, glm.probs1)
+
+# Use a plot.roc() function to visualize the relationship.
+plot.roc(ROC1,print.auc = TRUE,xlab = "1-specifictiy (FP)" , ylab =  "Senstivity (TP)", col = "blue", print.thres ="best", type = "shape")
+```
+
+The optimal cut value is 0.204, which is quite close to 1. The area under the curve is 0.999, indicating that the classifier is accurate. In general, the model is better if the ROC curve is close to one. In other words, when the ROC curve is close to one, that indicates a perfect classification.
+
+
+
+# ******************************************************************** QUADRATIC DISCRIMINANT ANALYSIS ********************************************************************
+
+```{r}
+# Fit a model.
+qda.fit = qda(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train , subset = train_indices )
+
+# Use a summary() function to provide the summary output.
+qda.fit
+```
+
+The summary table shows prior probabilities and group means classified into B and M class types.
+
+# QDA Prediction
+```{r warning=FALSE}
+# Predict the fitted model on the test set.
+qda.class = predict(qda.fit, test)$class
+qda.pred = predict(qda.fit, test)
+qda.posterior = qda.pred$posterior[,2] 
+# [,2] indexing position means benign cell, [,1] indexing position means malignant cell.
+
+# Display classification metrics.
+stat2 = stat(qda.class, diagnose.test)
+stat2
+
+# Compute test error value.
+er2 = error(qda.class, diagnose.test)
+
+# Compute accuracy.
+x2 = mean(qda.class == diagnose.test)*100
+
+# Construct ROC curve.
+roc1 = roc(test$diagnosis, qda.posterior)
+plot.roc(roc1,print.auc = TRUE,xlab = "1-Specificity (FP)", ylab = "Senstivity (TP)", col = "red", print.thres = "best") 
+```
+
+Surprisingly, the QDA predictions are more spectacular and accurate in capturing the true relationship than the logistic regression. Furthermore, the AUC, in this case, is 0.99, which is close to 1. As a result, our classifier can be considered excellent. When a cell is benign, 0.459 is the best cut-off point. It exhibits sensitivity while maintaining the greatest specificity. An argument best indicates the threshold with the highest sum sensitivity + specificity plotted.
+
+
+# ROC curves comparing true relationship between logistic and QDA machine learning algorithms.
+
+```{r warning=FALSE}
+# Logistic ROC curve with 10 predictors
+pred.2 = prediction(glm.probs, test$diagnosis) %>%
+  performance(measure = "tpr", x.measure = "fpr") 
+  
+# QDA ROC curve 
+pred.3 = prediction(qda.posterior, test$diagnosis) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+
+# Construct a plot.
+plot(pred.2, col= 2, main = "ROC Curve")
+plot(pred.3, col= 3, add = TRUE)
+abline (a =0, b= 1)
+
+# Display legends.
+legend(0.7, 0.35, c( "Logistic", "QDA"),2:3)
+```
+
+Surprisingly, the logistic ROC curve settled below the QDA ROC curve. It shows that QDA is a better classifier than logistic since QDA is less rigorous and accepts various feature covariance matrices for both classes.
+
+# Find an optimal k value by using a 25-fold cross-validation approach.
+```{r}
+# Use set.seed() for the reproducibility.
+set.seed(123)
+
+# Define a variable called train control. Call trainControl() function.
+train.control <- trainControl(method = "CV") 
+
+# Train the model
+model <- train(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train, method = "knn", trControl = train.control)
+
+# Print the results.
+print(model)
+
+# Use a plot() function to visualize an optimal K value.
+plot(model, col = "red", lwd = 2, type = "b")
+```
+
+In the K-NN algorithm, choosing an optimal value of K is critical. Using a 25-fold cross-validation approach, we determined that k = 9 is the best value for K. According to the summary table, k = 9 indicates the highest accuracy and kappa among the various K neighborhood values.
+
+
+
+# ********************************************************************* K-NN *********************************************************************
+
+```{r}
+# Feature scaling- normalizing sd =1 and mean = 0. Following a gaussian distribution.
+train.X = scale(train[,2:31]) # Except target variable;diagnosis
+test.X = scale(test[,2:31]) # Except target variable;diagnosis
+
+
+# Use a set.seed() for the reproducibility.
+set.seed(1)
+
+# k = 9
+knn.pred = knn(train = train.X, test = test.X, cl = train$diagnosis, k = 9)
+
+# Test error
+x3 = round(mean(knn.pred == test$diagnosis), 2)*100
+
+# Call the function stat.
+stat3 = stat(knn.pred, test$diagnosis)
+stat3
+
+# Call the function error.
+er3 = error(knn.pred, test$diagnosis)
+```
+An abovementioned summary table shows the maximum accuracy and kappa after using an optimal value of k = 9. As a result, we chose k = 9 as the optimal value of k in K-NN.
+
+
+# K-NN Plot using a ggplot appraoch.
+
+```{r}
+# Create a variable called result, which produces a data frame.
+result <- data.frame(test.X, knn.pred)
+
+# Visualize g1,.....,g4.
+g1 = ggplot(result, aes(x = radius_mean, y = texture_mean, col = knn.pred))+
+  geom_point(alpha = 0.8)
+g2 = ggplot(result, aes(x = compactness_mean, y = concave_points_mean, col = knn.pred))+
+  geom_point(alpha = 0.8)
+g3 = ggplot(result, aes(x = radius_worst, y = area_worst, col = knn.pred))+
+  geom_point(alpha = 0.8)
+g4 = ggplot(result, aes(x = fractal_dimension_worst, y = symmetry_worst, col = knn.pred))+
+  geom_point(alpha = 0.8)
+
+# Use a grid.arrange() function to arrange all the ggplots sequentally.
+grid.arrange(g1, g2, g3, g4 ,ncol = 2)
+```
+
+# Findings:
+We are interested to examine which points in the ggplot are Misclassified, and we use an optimal value of k=9. We found out, several B tumor cells are categorized as M tumors, and M tumor cells are classed as B tumors based on the first eight features. According to our findings, the tumor cells overlap, indicating that the k-NN algorithm failed to correctly classify them.
+
+
+
+# ******************************************************************* Neural Network *******************************************************************
+
+## Neural network with two hidden layers.
+```{r}
+# Use a set.seed() function for the reproducibility.
+set.seed(121)
+
+# Fit a neural network model.
+bc.nn = nnet(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train,size = 2) 
+# size = 2 indicates two hidden layers for computations.
+
+# Use a predict() function.
+bc.nn.pred1 = predict(bc.nn, test, type = "class")
+
+# Confusion matrix
+table(bc.nn.pred1,diagnose.test)
+
+# Compute Accuracy.
+round(mean(bc.nn.pred1 == diagnose.test), 2)*100
+
+# Use a names() function to recognize the names of the features.
+names(train) = make.names(names(train))
+
+# Use a set.seed() function for the reproducibility.
+set.seed(121)
+
+# Fit a model with a neuralnet package.
+nn.1 = neuralnet(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train, linear.output = FALSE, hidden = 2, err.fct = "sse")
+
+# Use a plotnet() function to visualize neural network.
+plotnet(nn.1, circle_cex = 4,  cex_val = 0.7, alpha_val = 0.7, pos_col = "black", neg_col = "gray",  bord_col = "black", max_sp = TRUE, pad_x = 0.7)
+```
+
+
+We obtained 60% accuracy using two hidden layers in the NN model. In the next step, we'll investigate how the accuracy changes with ten hidden layers. The Black thick lines in the neural network graphic represent positive weights assigned to each node, whereas the Gray thin lines represent negative weights assigned to each node. The blue circles represent the Terminal nodes. We have two hidden layers, H1 and H2, ten input neurons in the input layers, two bias constants, B1 and B2, and two outputs, O1 representing B tumor and O2 representing M tumor in the output layer.
+
+# Neural network with 10 hidden layers.
+```{r}
+# Use a set.seed() function for the reproducibility.
+set.seed(121)
+
+# Fit a neural network model.
+bc.nn = nnet(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train, size = 10) 
+# size = 10 indicates 10 hidden layers for computations.
+
+# Use a predict() function.
+bc.nn.pred2 = predict(bc.nn, test, type = "class")
+
+# Call the stat function.
+stat4 <- stat(bc.nn.pred2,test$diagnosis)
+stat4
+
+# Call an error function.
+er4 = error(bc.nn.pred2,test$diagnosis)
+
+# Compute Accuracy.
+x4 = round(mean(bc.nn.pred2 == diagnose.test), 2)*100
+
+# Use a set.seed() function for the reproducibility.
+set.seed(1)
+
+# Use a names() function to recognize the names of the features.
+names(train) = make.names(names(train))
+
+# Fit a model with a neuralnet package.
+nn.2 = neuralnet(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train, linear.output = FALSE, hidden = 10, err.fct = "sse") # sse stands for sum of squared errors.
+
+# Use a plotnet() function to visualize neural network.
+plotnet(nn.2, circle_cex = 4,  cex_val = 0.7, alpha_val = 0.7, pos_col = "black", neg_col = "gray",  bord_col = "black", max_sp = TRUE, pad_x = 0.7)
+```
+
+We chose the NN model with ten neurons in the hidden layers, which has a 99 percent accuracy rate. The rule that explains why ten neurons in the hidden layer were chosen is mentioned and added to the references. As a result, we preferred to proceed with ten neurons in the hidden layer.
+
+# Kazemi, Somayeh. (2017). Re: How to decide the number of hidden layers and nodes in a hidden layer?. Retrieved from: https://www.researchgate.net/post/How-to-decide-the-number-of-hidden-layers-and-nodes-in-a-hidden-layer/5964fcae5b49528f9e7097da/citation/download. 
+
+
+
+
+
+# ********************************************************************* SVM *********************************************************************
+
+** SVM is more straightforward and faster than NN. NN, on the other hand, is computationally expensive. NN is faster than SVM at dealing with many inputs. SVM is very useful in feeding data and locating a plane that can divide the data into two classes.
+```{r warning=FALSE}
+# Fit a model by using a svm().
+bc.svm = svm(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train)
+
+
+# Predict the fitted model.
+bc.svm.pred = predict(bc.svm, test[,2:31], type = "class")
+
+# Call a stat function.
+stat5 <- stat(bc.svm.pred, diagnose.test)
+stat5
+
+# Call an error function.
+er5 = error(bc.svm.pred, diagnose.test)
+
+# Compute accuracy
+x5 = round(mean(bc.svm.pred == diagnose.test), 2)*100
+```
+
+As seen in the summary table, SVM has a 98 percent accuracy, which is comparable to QDA, but NN is capable of competing with all other algorithms. The decision tree algorithm will be used in the next step to determine the test error and accuracy.
+
+
+# ******************************************************************** Decision Trees ********************************************************************
+
+```{r}
+# Fit a tall tree model.
+bc.tree = tree(diagnosis ~ radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train)
+
+# Predict the fitted model.
+bc.tree.pred = predict(bc.tree, test, type = "class")
+
+# Call a stat function.
+stat6 <- stat(bc.tree.pred,test$diagnosis)
+stat6
+
+# Call an error function.
+er6 = error(bc.tree.pred, test$diagnosis)
+
+# Use a plot() to plot decision trees. 
+par(mfrow=c(1,1))
+plot(bc.tree, col ="red")
+text(bc.tree, pretty = 0)
+
+# Use a rpart() function to fit a prune tree model.
+bc.rpart = rpart(diagnosis ~ radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train, method = "class")
+
+# Use a rpart.plot() to visualize the recursive partioning tree.
+rpart.plot(bc.rpart, extra = 106,cex = 0.8, clip.right.labs = FALSE, box.palette="RdBu", shadow.col="gray" ,type = 2, nn = TRUE, branch.lty = 3) # NN-number to each node
+
+# Predict the fitted model.
+bc.rpart.pred = predict(bc.rpart, test, type = "class")
+
+"Recursive-Partioning confusion Matrix"
+table(bc.rpart.pred, test$diagnosis)
+
+"Recursive-partioning Accuracy"
+round(mean(bc.rpart.pred == diagnose.test), 2)*100
+
+# Compute accuracy.
+x6 = round(mean(bc.tree.pred == diagnose.test), 2)*100
+```
+
+
+Since each node shows a unique number on the top, it is related to the significant predictors. Moreover, the description inside each node defines the predicted class (B or M), the predicted probability of B or M, and the percentage of observations in each node. The accuracy before pruning the tree is 92%, and the accuracy after pruning the tree is 91%. It does not show a big difference in accuracy value, but it makes a big difference in the decision tree plot. Now it is clear and concise for the interpretation.
+
+
+# Evaluation Metrics
+```{r}
+# Use a rbind() to combine all the rows.
+x = rbind(stat1,stat2,stat3,stat4,stat5,stat6)
+row.names(x) <- c("Logistic","QDA","KNN","NN","SVM","DECISION-TREE")
+
+# Visualize the table.
+knitr::kable(x, caption = "Evaluation Metrics in %")
+```
+
+
+# Findings
+Higher specificity indicates fewer false positive results, and thus fewer positive misclassified cases. In contrast, higher sensitivity means fewer false negative results, and thus fewer negative misclassified cases. The NN model has the Highest sensitivity, whereas the logistic model has the worst. Other than that, the KNN model has the highest specificity, while the logistic model has the lowest. Furthermore, in terms of accuracy, the NN algorithm is the best. In statistics, a low precision but high accuracy model indicates a systematic error (bias) that may be addressed, whereas a low precision but low accuracy model is undesirable. The KNN model has the highest precision among the other models, which implies it reliably predicts positive outcomes. In the medical field, precision is particularly useful for doctors when deciding on the best treatment for the patient.
+
+# Test Error table
+```{r warning=FALSE}
+# Use a rbind() to combine all the rows.
+Y = rbind(er1,er2,er3,er4,er5,er6)
+row.names(Y) <- c("Logistic","QDA","KNN","NN","SVM","DECISION-TREE")
+
+# Visualize the table.
+knitr::kable(Y, caption = "Test Error")
+```
+
+# Findings
+The NN algorithm has the lowest test error among all other algorithms, with a test error of 0.02 percent in the test error table. It denotes a model that is very well or best-fitting. On the other hand, the logistic regression model might have a BIAS problem, and thus it is not deemed a good fit model. Furthermore, QDA and SVM have the same test error, to determine which is the better model is problematic. We might observe the training error in QDA and SVM to confirm the best-fitting model.
+
+# Accuracy Table
+```{r}
+# Use a rbind() to combine all the rows.
+accuracy = rbind(x1,x2,x3,x4,x5,x6)
+row.names(accuracy) <- c("Logistic", "QDA", "KNN","NN", "SVM", "Decision tree")
+
+# Visualize the table.
+htmlTable::htmlTable(round(accuracy),"Accuracy in %")
+```
+
+# Conclusion
+To begin with, in the accuracy table, NN is the best algorithm, contributing 99 percent accuracy. As per the statistical evaluation report, NN has the best accuracy, sensitivity, precision, and specificity. As a result, doctors and physicians can put their trust in the algorithm's performance. SVM and K-NN work better over QDA because their specificity is higher, indicating fewer false positives. It Indicates that the patient is free of cancer. K-NN has a lower sensitivity than SVM and QDA, making it a less credible algorithm. As a result, doctors and physicians can have confidence in the model's accuracy and recommend a better treatment for the patient. Unfortunately, the decision tree falls short of the other leading algorithms, such as NN, SVM, and QDA, as per statistical classification evaluation metrics results such as sensitivity, specificity, precision, and accuracy. Lastly, logistic regression performs better on binary variables, although it suffers from multi-collinearity issues among certain variables, resulting in an inaccurate classification of the target variable (diagnosis). For the analysis of cancer disease treatment, we will not suggest logistic regression.
+
+
+
+
+# Data visualization
+```{r}
+# Use a pairs() function to display the relationships of independent variables with the dependent variable.
+pairs(diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train, pch = 2)
+```
+The Scatterplot indicates a significant relationship of independent variables with the dependent variable. Some independent variables depict a positive relationship with the target variable, while others demonstrate a non-linear relationship with the target variable. 
+
+
+** In this part, we are checking the relationship between some of the variables in our models.
+
+```{r}
+
+gg1 = ggplot(bc, aes(x = radius_mean, y = texture_mean, col = diagnosis))+
+  geom_point(alpha = 0.8)
+gg2 = ggplot(bc, aes(x = compactness_mean, y = concave_points_mean, col = diagnosis))+
+  geom_point(alpha = 0.8)
+gg3 = ggplot(bc, aes(x = radius_worst, y = area_worst, col = diagnosis))+
+  geom_point(alpha = 0.8)
+gg4 = ggplot(bc, aes(x = fractal_dimension_worst, y = symmetry_worst, col = diagnosis))+
+  geom_point(alpha = 0.8)
+grid.arrange(gg1, gg2, gg3, gg4 ,ncol = 2)
+```
+
+# Findings
+
+The top-left side of the ggplot graphs depicts radius mean versus texture_mean, while the top-right side portrays compactness_mean versus concave_points_mean. Large values for all variables indicate a higher cancer risk, whereas small values indicate lower cancer risk. Increased radius worst and area worst values are crucially important in the radius worst versus area worst ggplot. As a result, the graph depicts the increased risk of cancer cells turning malignant. On the other hand, we can see that the data points for fractal_dimension_worst and symmetry_worst are fully mixed up, making it difficult to identify them.
+
+# Data visualization
+```{r warning= FALSE}
+# Define tthe varaibles called ggg1,ggg2,ggg3,ggg4.
+ ggg1 = ggplot(train, aes(radius_mean,diagnosis, col = texture_mean))  +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(formula = y ~ x,method = "glm" ,method.args = list(family = "binomial"),se = FALSE) + 
+   theme_gray()
+ggg2 = ggplot(train, aes(compactness_mean,diagnosis, col = concave_points_mean))  +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(formula = y ~ x,method = "glm" ,method.args = list(family = "binomial"),se = FALSE) + 
+   theme_gray()
+ggg3 = ggplot(train, aes(radius_worst,diagnosis, col = area_worst))  +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(formula = y ~ x,method = "glm" ,method.args = list(family = "binomial"),se = FALSE) + 
+   theme_gray()
+ggg4 = ggplot(train, aes(fractal_dimension_worst,diagnosis, col = symmetry_worst))  +
+  geom_point(alpha = 0.2) + 
+  geom_smooth(formula = y ~ x,method = "glm" ,method.args = list(family = "binomial"),se = FALSE) + 
+    theme_gray()
+
+# Use a grid.arrange() fucntion to arrange them.
+grid.arrange(ggg1, ggg2, ggg3, ggg4 ,ncol = 1)
+```
+
+# Findings
+
+In the ggplots,we can see that as the values of each variable increase, we have a better likelihood of detecting M-type tumor cells. In the last plot, it's difficult to find any clear pattern for two variables, fractal dimension worst and symmetry worst. As a result, there is no apparent distinction between these two variables.
+
+# Partition Plot
+```{r}
+# Based on QDA algorithm.
+partimat(train$diagnosis ~., data = train[,c(2,3)] , subset = train_indices, method = "qda", plot.matrix = FALSE)
+```
+
+# Findings
+
+For two variables, texture mean and radius mean, we created a partition plot based on the QDA results. The classification boundary between the diagnosis classes: M and B are portrayed by the QDA classifier. Although there is some overlapping in each group, the vast majority of the data points are accurately categorized. If we contemplate, the QDA method's accuracy was 98 percent, the same as the K-NN methods. Thus, the QDA is a way more accurate and precise classifier than the logistic regression algorithm.
+
+
+
+
+# SVM classification plot
+
+The SVM classification plot is fascinating. In general, the bigger the c value, the less sensitive the algorithm is to the training data. As a result, the variance is lower, and the bias is higher. Conversely, the smaller the value of c, the more sensitive the algorithm is to the training data. As a result, we have a lower bias and a Bigger variance. Also, the gamma modifies the kernel width. When gamma is too low, the model is too limited and fails to capture the data's complexity and pattern. As a result, we decided to find an optimal c (cost) and gamma parameters to balance bias and variance trade-off.
+
+```{r}
+# # Use a names() function to recognize the names of the features.
+set.seed(1)
+# Find an optimal value of c (cost) parameter.
+opt.val = tune(svm, diagnosis ~radius_mean + texture_mean + compactness_mean + concave_points_mean + smoothness_se  + fractal_dimension_se + radius_worst + area_worst + symmetry_worst + fractal_dimension_worst, data = train, kernel = "radial",
+                ranges = list(cost = c(0.1,1,2,10),
+                              gamma = c(0.5,1,2,3,4)))
+
+# Extract the summary statistics table.
+summary(opt.val)
+
+# Use a svm() function to fit a model.
+SVM_FIT1 = svm(diagnosis ~radius_mean + texture_mean, data = train, kernel = "radial", cost = 2, gamma = 0.5)
+
+# Use a svm() function fit a model with an increase in the cost parameter.
+SVM_FIT2 = svm(diagnosis ~radius_mean + texture_mean, data = train, kernel = "radial", cost = 10, gamma = 0.5)
+
+# Use a summary() function to extract the summary table.
+summary(SVM_FIT1)
+summary(SVM_FIT2)
+
+# Use a svmplot() to plot the support vectors.
+plot(SVM_FIT1 , data = train[1:3])
+plot(SVM_FIT2 , data = train[1:3])
+```
+
+# Findings
+
+With an optimal cost (c) = 1 and gamma = 1 value. Other points showed up as 'o' in the svm classification plot. The support vectors showed up as 'x'. We created an SVM model and plotted it. We were able to collect 118 support vectors that were near the margin. With a higher cost (c) value, we obtained 93 support vectors. It indicates that more observations were trespassing the margin. A greater value (c) cost indicates a higher penalty for violating the rule, tightens the margin, and fewer patterns fall within it, resulting in fewer support vectors.
+
+```{r}
+set.seed(1)
+# Use a ksvm() function to display hyperplane
+ksvm1 = ksvm(diagnosis ~ texture_mean + radius_mean, data = train, type = "C-svc",kernel = "rbfdot", C = 2, na.action = na.omit)
+ksvm2 = ksvm(diagnosis ~ texture_mean + radius_mean, data = train, type = "C-svc",kernel = "rbfdot", C = 10, na.action = na.omit)
+plot(ksvm1, data = train)
+plot(ksvm2, data = train)
+```
+
+
+# Findings
+
+The more saturated the color, the higher the likelihood of successful classification in an extended support vector machine (ksvm). Black points were labeled as misclassified. The support vectors showed up as black triangles. The hyperplane orientation altered as the value of c (cost) increased. Fewer support vectors supported splitting the hyperplane with a narrower margin. It leads to the data points being Overfitted on the hyperplane. A smaller c value, on the other hand, resulted in more support vectors separating the hyper-plane with a Larger margin and correctly classifying the data points.
